@@ -1,0 +1,311 @@
+---
+title: "Predicting Global Sales of Video Games"
+author: "Rajesh Kandel, Rohan Dalmia, Will Jeziorski (rkandel2, rdalmia2, wsj2)"
+date: "December 9, 2017"
+output: 
+  html_document:
+    theme: readable
+    toc: yes
+---
+
+```{r setup, echo = FALSE, message = FALSE, warning = FALSE}
+options(scipen = 1, digits = 4, width = 80)
+```
+
+##Introduction
+
+###Statement of Interest
+
+We want to see what variables help to contribute to global video games sales. We are interested in exploring any relationships between predictor variables in the model, which can provide us with other analysis topics of video games. We are also interested in finding if critic score influences global sales more than user score or not.
+
+###Background Information of Data
+
+Kaggle is a website which, among other things, hosts data competitions and houses many different types of data. Our data comes from a user who used a different data set, and added new variables for critic scores and user scores.
+
+The data is able to be found at the link below.
+https://www.kaggle.com/rush4ratio/video-game-sales-with-ratings
+
+##Methods
+
+###Description of Original File
+The data set contains over 16,000 games with each game having up to 16 predictors, dependent on if all the information was provided. According to the data set creator, this data set is inspired by a different source of data, and the creator added on a few more variables to try and extend the ability to see trends and such. The variables that we used are listed as follows:
+
+Global_Sales: Measured in millions, this is a total of all sales of each video game.
+
+NA_Sales: Measured in millions, the total number of sales in North America for each video game.
+
+EU_Sales: Measured in millions, the total number of sales in Europe for each video game.
+
+JP_Sales: Measured in millions, the total number of sales in Japan for each video game.
+
+Other_Sales: Measured in millions, the total number of sales everywhere else not described in the above three variables for each video game.
+
+Critic_Score: An average score out of one-hundred which locks a decimal place. 
+
+User_Score: An average score out of ten, with a decimal point and tenths place.
+
+Genre: (Transformed by us) A categorical variable that attempts to describe a video game by gameplay interaction, not by specifics of the game. 
+
+Rating: A categorical variable which is a mark of what audiences the game is appropriate for, given by ESRB (transformed by us in the model.)
+
+Platform: What System the game was available on (this variable will end up being transformed by us in the model.)
+
+###Additional Preparation
+
+Additional transformations:
+To make the data cleaner for us to use, we first eliminated those observations which contained blanks in any part of the dataset. This was to make sure we only used data which had the full amount of observations. We then eliminated any duplicate values as well, to prevent any double counting (for games with specifically the same game and platform combination.) We then eliminated all variables which we would definitely not use, which were Name (has no statistical significance,) Publisher (would become similar to our column for Platform,) Year (uninterested in effect), and both count variables for reviews (count is a generally uninteresting variable too look at for this data.) Finally, we changed the Genres, Platforms, and Ratings variables to contain less treatments. For Genres, we classified all the treatments into 4 variables, now being Action, Adventure, Other, and Strategy. For Platforms, we transformed all of the platforms into which company they come from: Sony, Microsoft, Nintendo, or Other. For Ratings, we combined the seven different treatments into the three generally used ones, E, T, and M, as most of the other variables are rarely used in practice today, plus RP for games without ratings. 
+
+```{r} 
+data = read.csv('VG_Clean.csv')
+```
+
+###Process Followed
+
+First, we performed an exhaustive search of all the variables in our edited data set, because we preferred the model with the highest adjusted R-squared in our data set.
+
+```{r}
+library(leaps)
+all_vdgames_addmod = summary(regsubsets(Global_Sales ~ . - ï..Name , data = data))
+all_vdgames_addmod$which
+all_vdgames_addmod$adjr2
+(best_r2 = which.max(all_vdgames_addmod$adjr2))
+all_vdgames_addmod$which[best_r2, ]
+
+```
+
+After this, we saw that user score and critic score are not significant to our model. However, we suspected that including all of the sales variables was a problem, since it's likely that they're a perfect additive combination of global sales. Thus, we quickly created a model and examinied the coefficients.
+
+```{r}
+model_bad = lm(Global_Sales ~ NA_Sales + EU_Sales + JP_Sales + Other_Sales + Platform + Genre + Rating + User_Score + Critic_Score, data = data)
+summary(model_bad)$coeff
+```
+
+It is very easy to see that the coefficents for the sales variables are all near one, while all other coefficients are near zero. Thus, we decided that we should only look at one sales variable, and see if it was a good predictor of global sales. We chose Japan, because Japan has a very large video game market relative to its size, so we thought that would be the most interesting of the four categories to explore. 
+
+We can now begin to create our model.
+
+```{r}
+model = lm(Global_Sales ~ JP_Sales + Genre + Platform + Rating + User_Score + Critic_Score, data = data)
+```
+
+We then checked the model for violations of assumptions.
+
+```{r}
+#Heteroskedasticity
+plot(fitted(model), resid(model), col = 'blue', pch = 15, xlab = 'Fitted', ylab = 'Residuals', main = 'Residuals vs. Fitted model')
+abline(h = 0, col = 'red', lwd = 3 )
+
+#Heteroskedasticity Test
+library(zoo)
+library(lmtest)
+bptest(model)
+
+#Normality
+qqnorm(resid(model), main = 'Normal Q-Q Plot for Model', col = 'black')
+qqline(resid(model), col = 'orange')
+
+#Normality Test
+set.seed(1234)
+residn = sample(resid(model), 5000)
+shapiro.test(residn)
+```
+
+Clearly, the assumptions of heteroskedasticity and normality are violated. We first decided to use a log transformation to attempt and remedy the failure of normality.
+
+```{r}
+model1 = lm(log(Global_Sales) ~ JP_Sales + Genre + Platform + Rating + User_Score + Critic_Score, data = data)
+```
+
+After looking at the assumptions again,
+
+```{r}
+#Heteroskedasticity
+plot(fitted(model1), resid(model1), col = 'blue', pch = 15, xlab = 'Fitted', ylab = 'Residuals', main = 'Residuals vs. Fitted model')
+abline(h = 0, col = 'red', lwd = 3 )
+
+#Heteroskedasticity Test
+bptest(model1)
+
+#Normality
+qqnorm(resid(model1), main = 'Normal Q-Q Plot for Model', col = 'black')
+qqline(resid(model1), col = 'orange')
+
+#Normality Test
+set.seed(1234)
+residn = sample(resid(model1), 5000)
+shapiro.test(residn)
+```
+
+We see that normality looks much better, but heteroskedasticity is still violated. Looking at the residual plot, we believe that some sort of polynomial model would remedy this. Thus, we began to fit polynomial models.
+
+```{r} 
+model2 = lm(log(Global_Sales) ~ poly(JP_Sales,2) + Genre + Platform + Rating + User_Score + Critic_Score, data = data)
+
+#Heteroskedasticity
+plot(fitted(model2), resid(model2), col = 'blue', pch = 15, xlab = 'Fitted', ylab = 'Residuals', main = 'Residuals vs. Fitted model')
+abline(h = 0, col = 'red', lwd = 3 )
+
+#Heteroskedasticity Test
+bptest(model2)
+
+#Normality
+qqnorm(resid(model2), main = 'Normal Q-Q Plot for Model', col = 'black')
+qqline(resid(model2), col = 'orange')
+
+#Normality Test
+set.seed(1234)
+residn = sample(resid(model2), 5000)
+shapiro.test(residn)
+```
+
+```{r}
+model3 = lm(log(Global_Sales) ~ poly(JP_Sales,3) + Genre + Platform + Rating + User_Score + Critic_Score, data = data)
+
+#Heteroskedasticity
+plot(fitted(model3), resid(model3), col = 'blue', pch = 15, xlab = 'Fitted', ylab = 'Residuals', main = 'Residuals vs. Fitted model')
+abline(h = 0, col = 'red', lwd = 3 )
+
+#Heteroskedasticity Test
+bptest(model3)
+
+#Normality
+qqnorm(resid(model3), main = 'Normal Q-Q Plot for Model', col = 'black')
+qqline(resid(model3), col = 'orange')
+
+#Normality Test
+set.seed(1234)
+residn = sample(resid(model3), 5000)
+shapiro.test(residn)
+```
+
+```{r}
+model4 = lm(log(Global_Sales) ~ poly(JP_Sales,4) + Genre + Platform + Rating + User_Score + Critic_Score, data = data)
+
+#Heteroskedasticity
+plot(fitted(model4), resid(model3), col = 'blue', pch = 15, xlab = 'Fitted', ylab = 'Residuals', main = 'Residuals vs. Fitted model')
+abline(h = 0, col = 'red', lwd = 3 )
+
+#Heteroskedasticity Test
+bptest(model4)
+
+#Normality
+qqnorm(resid(model4), main = 'Normal Q-Q Plot for Model', col = 'black')
+qqline(resid(model4), col = 'orange')
+
+#Normality Test
+set.seed(1234)
+residn = sample(resid(model4), 5000)
+shapiro.test(residn)
+```
+
+There is not a significant difference in the appearance of residuals for the third and fourth degree polynomial model, so we settled on the third degree polynomial model.
+
+When looking at the test results from above, we see that we fail both tests. However, when looking at the plots, we see that the assumpions are not as heavily violated as it may seem. The residual plot, while diamond shaped, is a vast improvement fromm the original model and is likely due to the nature of the data and large size of the data set, and most of the points in the qq plot follow the line, and the tails are not a big reason for concern. Additionally, we were able to improve our shapiro test p-value from 2.2e-16 to .001.
+
+Before we finalized this as our model, we removed any highly influential values using the cooks distance method.
+
+```{r}
+model5 = lm(log(Global_Sales) ~ poly(JP_Sales,3) + Genre + Platform + Rating + User_Score + Critic_Score, data = data, subset = cooks.distance(model3)<= 4/length(cooks.distance(model3)))
+
+#Heteroskedasticity
+plot(fitted(model5), resid(model5), col = 'blue', pch = 15, xlab = 'Fitted', ylab = 'Residuals', main = 'Residuals vs. Fitted model')
+abline(h = 0, col = 'red', lwd = 3 )
+
+#Heteroskedasticity Test
+bptest(model5)
+
+#Normality
+hist(resid(model5), main = 'Histogram of Residuals for Model', xlab = 'Residuals', col = 'orange')
+qqnorm(resid(model5), main = 'Normal Q-Q Plot for Model', col = 'black')
+qqline(resid(model5), col = 'orange')
+
+#Normality Test
+set.seed(1234)
+residn = sample(resid(model5), 5000)
+shapiro.test(residn)
+```
+
+We now perform an exhaustive search to show that out of all the models possible, we choose the model which has predictors with the highest adjusted R-squared value.
+
+```{r}
+library(leaps)
+all_vdgames_mod = summary(regsubsets(log(Global_Sales) ~ poly(JP_Sales, 3) + Critic_Score + User_Score + Genre + Rating + Platform, data = data, subset = cooks.distance(model3)<= 4/length(cooks.distance(model3))))
+all_vdgames_mod$which
+
+(best_r2_ind = which.max(all_vdgames_mod$adjr2))
+all_vdgames_mod$which[best_r2_ind, ]
+
+```
+
+We now check the vif values for collinearity.
+
+```{r}
+library(faraway)
+vif(model5)
+```
+
+We see no values above five, so we are not concerned with multicollinearity.
+
+Now, we are able to look at our individual variables in the model to see if they are significant.
+
+```{r}
+summary(model5)
+```
+
+We see here that every variable is significant at the alpha level of .01. The variables that are not significant at this alpha level are a dummy variable for a broader variable in our model, so if one of the treatments is significant we keep the variable in our model.
+
+##Results
+
+As a result, we conclude with our logarithmic model with a third degree polynomial term for our JP_Sales variable. 
+
+```{r} 
+final_model = model5
+summary(final_model)
+library(tidyr)
+library(broom)
+```
+
+In this model, there are $14$ predictors.
+
+- $H_0: \beta_{JPSales} = \beta_{JPSales^2} = \beta_{JPSales^3} = \beta_{GenreAdventure} = \beta_{GenreOther} = \beta_{GenreStrategy} = \beta_{PlatformNintendo} = \beta_{PlatformOther} = \beta_{PlatformSony} = \beta_{RatingM} = \beta_{RatingRP} = \beta_{RatingT} = \beta_{User_Score} = \beta_{Critic_Score} = 0$
+- $H_1: \text{At least one of the predictiors is not equal to 0}$
+- Test statistic: $F = `r glance(final_model)$statistic`$
+- P-value: $`r glance(final_model)$p.value`$. Although, not actually $0$, but very small.
+- Decision: **Reject** $H_0$ at $\alpha = 0.01$.
+- Conclusion: There is a linear relationship between Global Sales and at least one of the predictors.
+
+###Interpretations
+
+$\hat{\beta_0}$= `r exp(summary(final_model)$coefficients[1,1])` is the estimated average Global sales for an "E" rated game of platform "Microsoft" and genre "Action" with every other variable as zero.
+
+$\hat{\beta_{JPSales}}$= `r exp(summary(final_model)$coefficients[2,1])` is the estimated number of times global sales increase for an incrase of 1 in JP_Sales for video games with certain values of Critic_Score, JP_Sales, and any value of Platform, Genre, and Rating.
+
+$\hat{\beta_{GenreAdventure}}$= `r exp(summary(final_model)$coefficients[5,1])` is the estimated ratio of average Global sales for genre "Adventure" as compared to genre "Action" for an "E" rated game of platform "Microsoft" for any values of the other variables.
+
+$\hat{\beta_{GenreOther}}$= `r exp(summary(final_model)$coefficients[6,1])` is the estimated ratio of average Global sales for genre "Other" as compared to genre "Action" for an "E" rated game of platform "Microsoft" for any values of the other variables.
+
+$\hat{\beta_{GenreStrategy}}$= `r exp(summary(final_model)$coefficients[7,1])` is the estimated ratio of average Global sales for genre "Strategy" as compared to genre "Action" for an "E" rated game of platform "Microsoft" for any values of the other variables.
+
+$\hat{\beta_{PlatformNintendo}}$= `r exp(summary(final_model)$coefficients[8,1])` is the estimated ratio of average Global sales for Platform "Nintendo" as compared to Platform "Microsoft" for an "E" rated game of genre "Action" for any values of the other variables.
+
+$\hat{\beta_{PlatformOther}}$= `r exp(summary(final_model)$coefficients[9,1])` is the estimated ratio of average Global sales for Platform "Other" as compared to Platform "Microsoft" for an "E" rated game of genre "Action" for any values of the other variables.
+
+$\hat{\beta_{PlatformSony}}$= `r exp(summary(final_model)$coefficients[10,1])` is the estimated ratio of average Global sales for Platform "Sony" as compared to Platform "Microsoft" for an "E" rated game of genre "Action" for any values of the other variables.
+
+$\hat{\beta_{RatingM}}$= `r exp(summary(final_model)$coefficients[11,1])` is the estimated ratio of average Global sales for Rating "M" as compared to an "E" rated game of genre "Action" and platform "Microsoft" for any values of the other variables.
+
+$\hat{\beta_{RatingRP}}$= `r exp(summary(final_model)$coefficients[12,1])` is the estimated ratio of average Global sales for Rating "RP" as compared to an "E" rated game of genre "Action" and platform "Microsoft" for any values of the other variables.
+
+$\hat{\beta_{RatingT}}$= `r exp(summary(final_model)$coefficients[13,1])` is the estimated ratio of average Global sales for Rating "T" as compared to an "E" rated game of genre "Action" and platform "Microsoft" for any values of the other variables.
+
+$\hat{\beta_{User_Score}}$ = `r exp(summary(final_model)$coefficients[14,1])` is the estimated number of times global sales increase for an increase of 1 in User_Score for video games with certain values of Critic_Score, JP_Sales and any value of Platform, Genre and Rating.
+
+$\hat{\beta_{Critic_Score}}$ = `r exp(summary(final_model)$coefficients[15,1])` is the estimated number of times global sales increase for an increase of 1 in Critic_Score for video games with certain values of User_Score, JP_Sales and any value of Platform, Genre and Rating.
+
+
+#Conclusions
+
+We found out that all of our variables of interest were significant in predicting Global Sales.
+
+
+Addressing the second question, we wanted to explore if critic score was more influential than user score or not. Global Sales is multiplied 1.045 times for each increase in critic score, while multiplied .868 times for each increase in user score. Thus, we see that critic score has a positive impact, while user score does not. If we make the unit increase for user score .1 (to attempt to normalize for the difference in the two), we see that the coefficient for its beta becomes `r summary(final_model)$coefficients[14,1]*.1`, so we would multiply global sales by `r exp((summary(final_model)$coefficients[14,1])*.1)`. Thus, since 1.045 is greater in absolute distance from 1 than .986, critic score has a greater impact that user score. This means that people look at critic score more than user score when buying games.
